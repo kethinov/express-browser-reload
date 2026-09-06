@@ -1,3 +1,13 @@
+## 5.0.0
+
+- Breaking: Dropped support for Node 20.
+- Fixed a bug that caused `express-browser-reload` to silently delete `upgrade` and `connection` listeners that your app had already registered on the server. It now appends its own listeners rather than replacing the existing ones.
+- Fixed the `skipDeletingConnections` param.
+- Fixed the WebSocket URL derivation in the client script, which appended port 80 to `https` pages that did not specify a port, producing a `wss://host:80` connection that could never succeed.
+- Fixed `upgrade` requests that are not WebSocket handshakes. They are now ignored instead of being answered with a WebSocket handshake, so `express-browser-reload` can share a server with another WebSocket library.
+- Improved performance of the client script: The client script is now read from disk once at startup rather than on every request, and is served verbatim: the string replacement that rewrote it on the way to the browser has been removed. The client script also now gives up after 1000 consecutive failed attempts to reach the server, roughly four minutes, and throws a descriptive error rather than reconnecting silently forever against a server that is never coming back. A successful connection resets the count.
+- Updated dependencies.
+
 ## 4.0.0
 
 - Breaking: Forked `reload` to `express-browser-reload` which focuses exclusively on the Express use case, as opposed to `reload` which is a more generalized tool with more features beyond the Express world.

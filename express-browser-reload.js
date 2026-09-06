@@ -1,39 +1,59 @@
-const path = require('path')
-const fs = require('fs')
+const crypto = require('node:crypto')
+const fs = require('node:fs')
+const path = require('node:path')
+
+// magic string from RFC 6455 that the websocket handshake response is derived from
+const websocketGuid = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+
+// the client script can't change while the server is running, so read it once at startup instead of on every request
+const clientScript = fs.readFileSync(path.join(__dirname, 'reload-client.js'), 'utf8')
 
 module.exports = (app, httpServer, params) => {
-  if (!app.get) throw new Error('express-browser-reload: `app` is not an Express app.')
-  if (typeof httpServer !== 'object' || !Object.keys(httpServer).includes('keepAlive')) throw new Error('express-browser-reload: `httpServer` is not a Server object.')
+  if (typeof app?.get !== 'function') throw new Error('express-browser-reload: `app` is not an Express app.')
 
-  const originalUpgradeHandler = httpServer.listeners('upgrade')[0]
-  httpServer.removeAllListeners('upgrade')
-  httpServer.on('upgrade', (request, socket, head) => {
-    if (originalUpgradeHandler) originalUpgradeHandler.call(httpServer, request, socket, head)
+  // duck typed rather than checked with `instanceof http.Server` so that https servers, which don't inherit from it, are accepted too
+  if (typeof httpServer?.on !== 'function' || typeof httpServer?.close !== 'function' || typeof httpServer?.getConnections !== 'function') throw new Error('express-browser-reload: `httpServer` is not a Server object.')
+
+  const websockets = new Set()
+
+  // this listener is appended rather than swapped in so that any upgrade listeners the app registered itself keep working
+  httpServer.on('upgrade', (request, socket) => {
+    // ignore upgrades meant for something other than a websocket, such as another websocket library sharing this server
+    if (request.headers.upgrade?.toLowerCase() !== 'websocket' || !request.headers['sec-websocket-key']) return
+
     socket.write([
-      'HTTP/1.1 101 Web Socket Protocol Handshake',
+      'HTTP/1.1 101 Switching Protocols',
       'Upgrade: websocket',
       'Connection: Upgrade',
-      `Sec-WebSocket-Accept: ${require('crypto')
+      `Sec-WebSocket-Accept: ${crypto
         .createHash('sha1')
-        .update(request.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', 'binary')
+        .update(request.headers['sec-websocket-key'] + websocketGuid, 'binary')
         .digest('base64')}`
     ].join('\r\n') + '\r\n\r\n')
+
+    websockets.add(socket)
+    socket.on('close', () => websockets.delete(socket)) // once the socket closes, remove it
   })
 
   if (!params?.skipDeletingConnections) {
-    const originalConnectionHandler = httpServer.listeners('connection')[0]
-    httpServer.removeAllListeners('connection')
-    const connections = {}
-    httpServer.on('connection', (conn) => {
-      if (originalConnectionHandler) originalConnectionHandler.call(httpServer, conn)
-      const key = conn.remoteAddress + ':' + conn.remotePort
-      connections[key] = conn
-      conn.on('close', () => { delete connections[key] }) // once the connection closes, remove
-    })
+    // a socket handed off to an upgrade listener stops being tracked by the server, and `closeIdleConnections()` won't touch it either, so without this the websockets above would keep `server.close()` from ever finishing
+    const originalClose = httpServer.close.bind(httpServer)
+    httpServer.close = (...args) => {
+      const result = originalClose(...args)
+
+      // only the sockets this module opened are destroyed outright, since nothing else can clean them up
+      for (const websocket of websockets) websocket.destroy()
+      websockets.clear()
+
+      // everything else is left to Node, which drops keep alive connections that are sitting idle while letting requests still in flight finish normally
+      httpServer.closeIdleConnections()
+
+      return result
+    }
   }
 
   app.get(params?.route || '/express-browser-reload.js', (req, res) => {
     res.type('text/javascript')
-    res.send(fs.readFileSync(path.join(__dirname, './reload-client.js'), 'utf8').replace('socketUrl.replace()', 'socketUrl.replace(/(^http(s?):\\/\\/)(.*:)(.*)/, (match, p1, p2, p3, p4) => `ws${p2 ? "s" : ""}://${p3}${p4}`)')) // eslint-disable-line
+    res.send(clientScript)
   })
 }

@@ -1,9 +1,15 @@
 # How to contribute
 
+## Setting up
+
+- Install the dependencies: `npm ci`.
+- Install the browsers the tests drive: `npx playwright install chromium firefox`.
+
 ## Before opening a pull request
 
 - Be sure all tests pass: `npm t`.
-- Ensure good test coverage and write new tests if necessary: `npm run coverage`.
+- Ensure good test coverage and write new tests if necessary: `npm run coverage`. Coverage is enforced at 100% and will fail the build below that. Note that `reload-client.js` runs in the browser rather than in Node, so it doesn't appear in the coverage report even though the browser tests exercise it — cover changes to it with a browser test.
+- Be sure the linter is happy: `npm run lint`. Most problems can be fixed automatically with `npm run lint-fix`.
 - Add your changes to `CHANGELOG.md`.
 
 ## Release process

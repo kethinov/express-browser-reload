@@ -10,25 +10,31 @@
     "Alexander J. Lallier <alexanderlallier@gmail.com>",
     "JP Richardson <jprichardson@gmail.com>"
   ],
-  "version": "4.0.0",
+  "version": "5.0.0",
   "homepage": "https://rooseveltframework.org/docs/express-browser-reload/latest",
   "license": "CC-BY-4.0",
   "main": "express-browser-reload.js",
+  "files": [
+    "express-browser-reload.js",
+    "reload-client.js",
+    "CHANGELOG.md",
+    "CONFIGURATION.md",
+    "USAGE.md"
+  ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "devDependencies": {
-    "@playwright/test": "1.59.1",
     "express": "5.2.1",
+    "playwright": "1.63.0",
     "standard": "17.1.2"
   },
   "scripts": {
-    "sample1": "node -e \"process.chdir('sampleApps/express'); require('./sampleApps/express/server1.js')\"",
-    "sample2": "node -e \"process.chdir('sampleApps/express'); require('./sampleApps/express/server2.js')\"",
-    "sample3": "node -e \"process.chdir('sampleApps/express'); require('./sampleApps/express/server3.js')\"",
+    "sample": "node sampleApps/express/server.js",
     "lint": "standard",
     "lint-fix": "standard --fix",
-    "test": "playwright test"
+    "test": "node --test --test-timeout=90000 \"test/**/*.test.js\"",
+    "coverage": "node --test --test-timeout=90000 --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 --test-coverage-exclude=\"test/**\" --test-coverage-exclude=\"sampleApps/**\" --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov \"test/**/*.test.js\""
   },
   "repository": {
     "type": "git",

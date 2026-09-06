@@ -1,34 +1,47 @@
-(function refresh () {
-  let socketUrl = window.location.origin
-  if (!window.location.origin.match(/:[0-9]+/)) socketUrl = window.location.origin + ':80'
-  socketUrl = socketUrl.replace() // this is dynamically populated by the reload.js file before it is sent to the browser
-  let firstChangeFlag = false // the first change flag is used to tell reload to wait until the socket closes at least once before we allow the page to open on a socket open event. otherwise reload will go into a inifite loop, as the page will have a socket on open event once it loads for the first time
-  let navigatedAwayFromPageFlag // the navigatedAwayFromPageFlag is set to true in the event handler onbeforeunload because we want to short-circuit reload to prevent it from causing the page to reload before the navigation occurs.
-  let socket
+/* eslint-env browser */
+(function reload () {
+  // the websocket lives on the same host and port as the page, so the page's own origin is the socket url with the scheme swapped: http -> ws, https -> wss
+  const socketUrl = window.location.origin.replace(/^http/, 'ws')
 
-  function websocketWaiter () {
+  const reconnectDelay = 250 // milliseconds to wait between attempts to reach the server
+
+  // giving up eventually keeps a page that was left open against a server that is never coming back from retrying silently forever
+  const maxAttempts = 1000
+
+  let attempts = 0
+
+  // the socket has to close at least once before an open event is allowed to reload the page, otherwise the socket opening on the very first page load would reload immediately and loop forever
+  let serverWentDown = false
+
+  // set when the user navigates away, so that a socket closing as part of the navigation doesn't reload the page out from under it
+  let navigatingAway = false
+
+  function connect () {
     setTimeout(() => {
-      socket = new WebSocket(socketUrl) // eslint-disable-line
+      // throwing surfaces this as an uncaught error in the console rather than leaving the page looking like it's still watching for changes when it has stopped
+      if (++attempts > maxAttempts) throw new Error(`express-browser-reload: gave up trying to reach the server at ${socketUrl} after ${maxAttempts} attempts over about ${Math.round(maxAttempts * reconnectDelay / 1000)} seconds. Reload the page once the server is back up.`)
 
-      socket.onopen = (msg) => {
-        if (firstChangeFlag === true && navigatedAwayFromPageFlag !== true) {
-          firstChangeFlag = false // reset the firstChangeFlag to false so that when the socket on open events are being fired it won't keep reloading the page
-          window.location.reload() // now that everything is set up properly we reload the page
+      const socket = new WebSocket(socketUrl)
+
+      // the server is back up, so if it had gone down this is the moment to pick up whatever changed
+      socket.onopen = () => {
+        attempts = 0 // only consecutive failures count toward giving up, so a long lived page that reconnects many times never runs out of attempts
+        if (serverWentDown && !navigatingAway) {
+          serverWentDown = false
+          window.location.reload()
         }
       }
 
-      socket.onclose = (msg) => {
-        firstChangeFlag = true // we encountered a change so we set firstChangeFlag to true so that as soon as the server comes back up and the socket opens we can allow the reload
-        websocketWaiter() // call the webSocketWaiter function so that we can open a new socket and set the event handlers
+      // the server going away closes the socket, so keep retrying until it answers again and the open handler above takes over
+      socket.onclose = () => {
+        serverWentDown = true
+        connect()
       }
-
-      socket.onmessage = (msg) => msg.data === 'reload' && socket.close()
-    }, 250)
+    }, reconnectDelay)
   }
 
-  // wait until the page loads for the first time and then call the webSocketWaiter function so that we can connect the socket for the first time
-  window.addEventListener('DOMContentLoaded', () => websocketWaiter())
+  // wait for the page to finish loading before connecting for the first time
+  window.addEventListener('DOMContentLoaded', connect)
 
-  // if the user navigates away from the page, we want to short-circuit reload to prevent it from causing the page to reload before the navigation occurs
-  window.addEventListener('beforeunload', () => { navigatedAwayFromPageFlag = true })
+  window.addEventListener('beforeunload', () => { navigatingAway = true })
 })()
