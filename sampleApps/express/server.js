@@ -19,8 +19,9 @@ app.get('/', (req, res) => {
 
 const server = app.listen(3000, () => console.log('🎧 express-browser-reload express sample app server is running on http://localhost:3000'))
 
+// params for express-browser-reload (currently set to the defaults)
 const params = {
-  route: '/hfjdsjkfs.js',
+  route: '/express-browser-reload.js',
   skipDeletingConnections: false
 }
 
